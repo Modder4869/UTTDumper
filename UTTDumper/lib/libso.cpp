@@ -100,9 +100,11 @@ extern "C" void JNIEXPORT JNI_OnUnload(JavaVM* vm, void* reserved)
 #else
 
 static void __attribute__((constructor)) onLoad() {
+    redirector = new StdStreamRedirector();
     std::thread(main_thread).detach();
 }
 
-static void __attribute__((destructor)) onUnload() { }
+static void __attribute__((destructor)) onUnload() { delete redirector; }
+
 
 #endif
