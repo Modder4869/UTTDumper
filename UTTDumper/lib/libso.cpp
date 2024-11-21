@@ -12,8 +12,6 @@ static void main_thread() {
     }
 }
 
-#ifdef ANDROID
-
 #include <jni.h>
 #include <iostream>
 #include <android/log.h>
@@ -77,6 +75,8 @@ public:
 
 StdStreamRedirector* redirector;
 
+#ifdef ANDROID
+
 extern "C" jint JNIEXPORT JNI_OnLoad(JavaVM* vm, void* reserved)
 {
     redirector = new StdStreamRedirector();
@@ -96,15 +96,14 @@ extern "C" void JNIEXPORT JNI_OnUnload(JavaVM* vm, void* reserved)
 {
     delete redirector;
 }
-
-#else
-
 static void __attribute__((constructor)) onLoad() {
     redirector = new StdStreamRedirector();
+
     std::thread(main_thread).detach();
 }
 
 static void __attribute__((destructor)) onUnload() { delete redirector; }
+
 
 
 #endif
