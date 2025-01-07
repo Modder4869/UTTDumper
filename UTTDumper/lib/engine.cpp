@@ -13,31 +13,67 @@
 
 #else
 
-static void* get_module_base(const char* moduleName)
-{
-	FILE* fp;
-	long addr = 0;
-	char* pch;
-	char line[1024];
+#include <dlfcn.h>
+#include <string>
 
-	fp = fopen("/proc/self/maps", "r");
-	if (fp != NULL) {
-		while (fgets(line, sizeof(line), fp)) {
-			if (strstr(line, moduleName) && strstr(line, "r-xp")) {
-				pch = strtok(line, "-");
-				addr = strtoul(pch, NULL, 16);
-				if (addr == 0x8000)
-					addr = 0;
-				break;
-			}
-		}
+static uintptr_t get_module_base_from_exports(const char* moduleName) {
+	uintptr_t base;
 
-		fclose(fp);
+	void* unitySendMessage = dlsym(RTLD_DEFAULT, "UnitySendMessage");
+
+	Dl_info dlInfo;
+	if (dladdr(unitySendMessage, &dlInfo) != 0) {
+		base = reinterpret_cast<uintptr_t>(dlInfo.dli_fbase);
 	}
-	return (void*)addr;
+
+	return base;
 }
 
-#define GetModuleBase(moduleName) reinterpret_cast<uintptr_t>(get_module_base(moduleName))
+static uintptr_t get_module_base_from_maps(const char* moduleName) {
+	std::ifstream maps("/proc/self/maps");
+
+	char temp;
+	ino_t inode;
+	int32_t dev_major, dev_minor;
+	uintptr_t begin, end, offset;
+	std::string line, path, perms;
+	while (std::getline(maps, line)) {
+		std::istringstream ss(line);
+
+		ss >> std::hex;
+		ss >> begin >> temp >> end >> perms >> offset >> dev_major >> temp >> dev_minor;
+
+		ss >> std::dec;
+		ss >> inode;
+
+		ss >> std::ws;
+		if (std::getline(ss, path) && path.find(moduleName) != path.npos && inode == 0) {
+			break;
+		}
+	}
+
+	return begin;
+}
+
+static uintptr_t get_module_base(const char* moduleName) {
+	uintptr_t base;
+
+	base = get_module_base_from_exports(moduleName);
+	if (base != 0) {
+		return base;
+	}
+
+	std::cout << "Unable to find module base from exports, attempting to find from maps..." << std::endl;
+
+	base = get_module_base_from_maps(moduleName);
+	if (base != 0) {
+		return base;
+	}
+	
+	throw std::runtime_error(std::format("Unable to find base address for {0}", moduleName));
+}
+
+#define GetModuleBase(moduleName) get_module_base(moduleName)
 
 #endif
 
@@ -81,7 +117,7 @@ namespace UTTD {
 #endif
 			}
 
-			
+
 			std::vector<uint32_t> exclude = {};
 			toml::array* arr = gameNode["exclude"].as_array();
 			if (arr->size() > 0 && arr->is_homogeneous<int64_t>()) {
